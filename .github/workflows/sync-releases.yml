@@ -27,8 +27,6 @@ jobs:
             fi
             echo "== 正在同步 $tag"
             dir=$(mktemp -d)
-            # 下载该版本的全部附件（ipa 等），不含源码包（源码包本仓库会自动生成）
-            gh release download "$tag" -R "$UPSTREAM" --dir "$dir"
             # 取上游的标题和说明文字（说明文件放在附件目录之外，免得被当附件传上去）
             title=$(gh release view "$tag" -R "$UPSTREAM" --json name --jq '.name')
             notes=$(mktemp)
@@ -37,8 +35,17 @@ jobs:
             if [ "$(gh release view "$tag" -R "$UPSTREAM" --json isPrerelease --jq '.isPrerelease')" = "true" ]; then
               extra="--prerelease"
             fi
-            # 在本仓库创建同名 Release 并上传附件（tag 已随 fork 一起过来，直接挂上）
-            gh release create "$tag" "$dir"/* --title "${title:-$tag}" --notes-file "$notes" $extra
+            # 先数附件：无附件的 Release（如 wloc v1.1.0）直接下载会报错退出，必须分开处理
+            count=$(gh release view "$tag" -R "$UPSTREAM" --json assets --jq '.assets | length')
+            if [ "$count" -gt 0 ]; then
+              # 下载该版本的全部附件（ipa 等），不含源码包（源码包本仓库会自动生成）
+              gh release download "$tag" -R "$UPSTREAM" --dir "$dir"
+              # 在本仓库创建同名 Release 并上传附件
+              gh release create "$tag" "$dir"/* --title "${title:-$tag}" --notes-file "$notes" $extra
+            else
+              echo "== $tag 无附件，只建空 Release"
+              gh release create "$tag" --title "${title:-$tag}" --notes-file "$notes" $extra
+            fi
             echo "== $tag 同步完成"
           done
           echo "全部同步完毕"
